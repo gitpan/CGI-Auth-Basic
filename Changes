@@ -2,7 +2,15 @@ Revision history for Perl extension CGI::Auth::Basic.
 
 Time zone is GMT+2.
 
-1.1 Tue Aug 31 16:14:39 2004
+1.02 Sun Nov  7 05:27:49 2004
+	=> Changed default CHMOD value to 0777 (it was 0644).
+	   It must be 0666, but I think that 0777 is mostly 
+	   better for CGI apps.
+	=> Updated pod.
+	=> Fixed typo in error messages.
+	=> Added module version info to fatal html.
+
+1.01 Tue Aug 31 16:14:39 2004
 	=> Added hidden option to new. You can now define 
 	   some hidden areas globally in the templates.
 	   They'll also be used in the query strings.

@@ -25,7 +25,7 @@ sub new {
                                     changep_param  => 'changepassword',
                                     cookie_id      => 'passcookie',
                                     cookie_timeout => '10m',
-                                    chmod_value    => 0644,
+                                    chmod_value    => 0777,
                                     );
 
    $auth->set_template(template());

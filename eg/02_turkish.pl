@@ -26,7 +26,7 @@ sub new {
                                     changep_param  => 'parola_degistir',
                                     cookie_id      => 'parolakurabiyesi',
                                     cookie_timeout => '1h',
-                                    chmod_value    => 0644,
+                                    chmod_value    => 0777,
                                     );
 
    $auth->set_template(template());

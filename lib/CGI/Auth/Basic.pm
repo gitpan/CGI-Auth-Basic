@@ -2,7 +2,7 @@ package CGI::Auth::Basic;
 use strict;
 use vars qw[$VERSION $AUTOLOAD $RE %ERROR $FATAL_HEADER];
 
-$VERSION = "1.01";
+$VERSION = "1.02";
 
 $RE = qr[^\w\./]; # regex for passwords
 
@@ -14,7 +14,7 @@ $RE = qr[^\w\./]; # regex for passwords
    NO_PASSWORD       => "No password specified (or password file can not be found)!",
    UPDATE_PFILE      => "Your password file is empty and your current setting does not allow this code to update the file! Please update your password file.",
    ILLEGAL_PASSWORD  => "Illegal password! Not accepted. Go back and enter a new one",
-   FILE_WRITE        => "Error opening paswword file for update: $!",
+   FILE_WRITE        => "Error opening password file for update: $!",
    UNKNOWN_METHOD    => "There is no method called '<b>%s</b>'. Check your coding.",
    EMPTY_FORM_PFIELD => "You didn't set any password (password file is empty)!",
    WRONG_PASSWORD    => "<p>Wrong password!</p>",
@@ -61,7 +61,7 @@ sub new {
    $self->{changep_param}  = $o{changep_param}  || 'changepass';
    $self->{cookie_timeout} = $o{cookie_timeout} || '';
    $self->{setup_pfile}    = $o{setup_pfile}    || 0;
-   $self->{chmod_value}    = $o{chmod_value}    || 0644;
+   $self->{chmod_value}    = $o{chmod_value}    || 0777;
    $self->{use_flock}      = $o{use_flock}      || 1;
    $self->{hidden}         = $o{hidden}         || [];
    unless(ref($self->{hidden}) and ref($self->{hidden}) eq 'ARRAY') {
@@ -426,7 +426,7 @@ sub fatal {
        </style>
       </head>
       <body>
-      <h1>$class - Fatal Error</h1>
+      <h1>$class $VERSION - Fatal Error</h1>
       <span class="error">$error</span> 
       <br>
       <br>
@@ -663,8 +663,9 @@ option.
 
 =item chmod_value
 
-Password file's chmod value. Default value is C<0644>. Change this value 
-if you get file open/write errors. Takes octal numbers like C<0644>.
+Password file's chmod value. Default value is C<0777>. Change this value 
+if you get file open/write errors or want to use different level of 
+permission. Takes octal numbers like C<0777>.
 
 =item use_flock
 
@@ -749,6 +750,14 @@ Sets the exit code. By default, CORE::exit() will be called. But you can
 change this behaviour by using this method. Accepts a subref:
 
    $auth->exit_code(sub { Apache->exit });
+
+You can also do some clean up before exiting:
+
+   $auth->exit_code(sub {
+      untie %session;
+      $dbh->disconnect;
+      exit;
+   });
 
 =head2 Class Methods
 
