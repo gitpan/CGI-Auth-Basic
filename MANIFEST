@@ -1,0 +1,12 @@
+lib/CGI/Auth/Basic.pm
+Changes
+Makefile.PL
+MANIFEST
+README
+t/01_use.t
+eg/01_template.pl
+eg/02_turkish.pl
+eg/03_standard.pl
+eg/04_simple.pl
+eg/password.txt
+META.yml                                 Module meta-data (added by MakeMaker)
