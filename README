@@ -1,5 +1,5 @@
 CGI::Auth::Basic
-===========
+================
 
 Basic CGI authentication interface.
 
@@ -20,9 +20,6 @@ or under Windows:
    nmake
    nmake test
    nmake install
-
-See the resulting pictures from the tests for sample
-graphics (if you "make test"). 
 
 DEPENDENCIES
 

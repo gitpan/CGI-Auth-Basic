@@ -1,11 +1,8 @@
 package CGI::Auth::Basic;
-# Burak Gürsoy
-# Basic user validation class
-# Thu Feb 12 22:31:53 2004
 use strict;
 use vars qw[$VERSION $AUTOLOAD $RE %ERROR $FATAL_HEADER];
 
-$VERSION = "1.0";
+$VERSION = "1.01";
 
 $RE = qr[^\w\./]; # regex for passwords
 
@@ -66,6 +63,18 @@ sub new {
    $self->{setup_pfile}    = $o{setup_pfile}    || 0;
    $self->{chmod_value}    = $o{chmod_value}    || 0644;
    $self->{use_flock}      = $o{use_flock}      || 1;
+   $self->{hidden}         = $o{hidden}         || [];
+   unless(ref($self->{hidden}) and ref($self->{hidden}) eq 'ARRAY') {
+      $self->fatal("hidden parameter must be an arrayref!")
+   }
+   my $hidden;
+   my @hidden_q;
+   foreach (@{ $self->{hidden} }) {
+      $hidden .= qq~<input type="hidden" name="$_->[0]" value="$_->[1]">\n~;
+      push @hidden_q,  $_->[0]."=".$_->[1];
+   }
+   $self->{hidden_q} = @hidden_q ? join("&",@hidden_q) : "";
+   $self->{hidden} = $hidden || "";
 
    $self->{logged_in}      = 0;
    # Temporary template variables (but some are not temporary :))
@@ -78,8 +87,17 @@ sub new {
                                 _TEMPLATE_TITLE_USER
                                 _TEMPLATE_NAMES
                                ];
+   $self->{EXIT_PROGRAM} = sub {CORE::exit()};
    $self->init;
    return $self;
+}
+
+sub exit_code {
+   my $self = shift;
+   my $code = shift || return;
+   if (ref $code and ref $code eq 'CODE') {
+      $self->{EXIT_PROGRAM} = $code;
+   }
 }
 
 sub init {
@@ -282,7 +300,10 @@ sub login_form {
  <tr>
   <td class="lighttable">Enter <i>the</i> password to run this program:</td>
   <td class="lighttable"><input type="password" name="$self->{cookie_id}"></td>
-  <td class="lighttable" align="right"><input type="submit" name="submit" value="Login"></td>
+  <td class="lighttable" align="right">
+  <input type="submit" name="submit" value="Login">
+  $self->{hidden}
+  </td>
  </tr>
 </table>
 </td> </tr>
@@ -315,7 +336,7 @@ sub change_pass_form {
   <input type="submit" name="submit" value="Change Password">
   <input type="hidden" name="change_password" value="ok"></td>
   <input type="hidden" name="$self->{changep_param}" value="1"></td>
-
+  $self->{hidden}
  </tr>
 </table>
 </td> </tr>
@@ -325,9 +346,10 @@ sub change_pass_form {
 
 sub logoff_link {
    my $self = shift;
+   my $query = $self->{hidden_q} ? "&".$self->{hidden_q} : "";
    return $self->compile_template('logoff_link')
            ||
-          qq~<span class="small">[<a href="$self->{program}?$self->{logoff_param}=1">Log-off</a> - <a href="$self->{program}?$self->{changep_param}=1">Change password</a>]</span> ~ if $self->{logged_in};
+          qq~<span class="small">[<a href="$self->{program}?$self->{logoff_param}=1$query">Log-off</a> - <a href="$self->{program}?$self->{changep_param}=1$query">Change password</a>]</span> ~ if $self->{logged_in};
    return '';
 }
 
@@ -342,12 +364,13 @@ sub screen {
    my $self   = shift;
    my %p      = scalar(@_) % 2 ? () : @_;
    my @cookie = $p{cookie} ? (-cookie => $p{cookie}) : (); 
+   my $refresh_url = $self->{hidden_q} ? "$self->{program}?$self->{hidden_q}" : $self->{program};
    # Set template vars
    $self->{page_logoff_link}    = $self->logoff_link;
    $self->{page_content}        = $p{content};
    $self->{page_title}          = $p{title};
-   $self->{page_refresh}        = $p{forward} ? qq~<meta http-equiv="refresh" content="0; url=$self->{program}">~ : '';
-   $self->{page_inline_refresh} = $p{forward} ? qq~<a href="$self->{program}">&#187;</a>~ : '';
+   $self->{page_refresh}        = $p{forward} ? qq~<meta http-equiv="refresh" content="0; url=$refresh_url">~ : '';
+   $self->{page_inline_refresh} = $p{forward} ? qq~<a href="$refresh_url">&#187;</a>~ : '';
    my $out = $self->compile_template('screen')
               ||
              qq~<html>
@@ -437,7 +460,7 @@ sub empty_cookie {
                                -expires => '-10y')
 }
 
-sub exit_program { $ENV{MOD_PERL} ? Apache->exit : CORE::exit }
+sub exit_program { shift->{EXIT_PROGRAM}->() }
 
 sub AUTOLOAD {
    my $self = shift;
@@ -557,7 +580,7 @@ couldn't find a better one.
 
 =item ihacloaiwtui
 
-See L<cgi_object>.
+See C<cgi_object>.
 
 =item password
 
@@ -573,10 +596,10 @@ value to a valid file path. It'll be your password file and will be
 updated (change your password) if necessary. The module will use 
 this file to store/fetch password string. If the file does not exist, 
 the module will exit with an error. If the file is empty and you set
-the L<setup_pfile> parameter to a true value, you'll be prompted to 
+the C<setup_pfile> parameter to a true value, you'll be prompted to 
 enter a password for the first time.
 
-You can not use L<password> and C<file> parameters together. You must 
+You can not use C<password> and C<file> parameters together. You must 
 select one of them to use.
 
 Note that: you must protect your password file(s). Put it above your
@@ -614,7 +637,7 @@ set this to a correct value. Defaut is C<ISO-8859-1> (english).
 =item logoff_param
 
 Default value is C<logoff>. If the user is logged-in, you can show him/her
-a logoff link (see L<"logoff_link"> method). With the default value, 
+a logoff link (see L<logoff_link|/logoff_link> method). With the default value, 
 You'll get this link:
 
    <your_program>?logoff=1
@@ -635,7 +658,7 @@ closes all browser windows)
 
 =item changep_param
 
-Form area name for password change. Same as L<"logoff_param">. Cosmetic
+Form area name for password change. Same as C<logoff_param>. Cosmetic
 option.
 
 =item chmod_value
@@ -648,6 +671,19 @@ if you get file open/write errors. Takes octal numbers like C<0644>.
 Default value is C<1> and C<flock()> will be used on filehandles. You can 
 set this to zero to turn off flock for platforms that does not implement 
 flock (like Win9x).
+
+=item hidden
+
+If the area you want to protect is accessible with some parameters, 
+use this option to set the hidden form areas. Passed as an array of 
+array, AoA:
+
+   hidden => [
+               [action => 'private'],
+               [do     => 'this'],
+   ],
+
+They'll also be used in the refresh pages and links as a query string.
 
 =back
 
@@ -688,7 +724,7 @@ C<error>.
 
 If you want to load the default titles on some part of
 the program, pass C<delete_all> parameter with a true value 
-to L<set_template>:
+to L<set_template|/set_template>:
 
    $auth->set_template(delete_all => 1);
 
@@ -706,6 +742,13 @@ that most of the template modules' offer.
 
 Returns the code that includes logoff and change password links if the 
 user is logged-in, returns an empty string otherwise.
+
+=head3 exit_code
+
+Sets the exit code. By default, CORE::exit() will be called. But you can 
+change this behaviour by using this method. Accepts a subref:
+
+   $auth->exit_code(sub { Apache->exit });
 
 =head2 Class Methods
 
@@ -728,10 +771,10 @@ are trapped by a special method called B<fatal()>. If you do something
 illegal with the methods like; wrong number of parameters, or calling an 
 undefined method, it'll be trapped by C<fatal>. Currently, you can not 
 control the behaviour of this method (unless you subclass it), but you can
-define it's HTTP Header; see L<"fatal_header">. On any 
+define it's HTTP Header; see L<fatal_header|/fatal_header>. On any 
 fatal error, it will print the error message and some usefull information
-as a web page, then it will terminate the program. The program exits with
-C<Apache-E<gt>exit> or C<CORE::exit>, depending on the environment.
+as a web page, then it will terminate the program. You can set the 
+exit code with L<exit_code|/exit_code> method.
 
 All error messages (including fatal) are accessible via the class variable 
 C<%CGI::Auth::Basic::ERROR>. Dump this variable to see the keys and values.

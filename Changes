@@ -2,5 +2,11 @@ Revision history for Perl extension CGI::Auth::Basic.
 
 Time zone is GMT+2.
 
+1.1 Tue Aug 31 16:14:39 2004
+	=> Added hidden option to new. You can now define 
+	   some hidden areas globally in the templates.
+	   They'll also be used in the query strings.
+	=> New method exit_code() to set the exit code.
+	   Default is CORE::exit.
 1.0 Sat Feb 21 16:12:56 2004
 	=> First release.

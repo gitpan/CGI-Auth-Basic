@@ -1,0 +1,35 @@
+This file contains message digests of all files listed in MANIFEST,
+signed via the Module::Signature module, version 0.41.
+
+To verify the content in this distribution, first make sure you have
+Module::Signature installed, then type:
+
+    % cpansign -v
+
+It would check each file's integrity, as well as the signature's
+validity.  If "==> Signature verified OK! <==" is not displayed,
+the distribution may already have been compromised, and you should
+not run its Makefile.PL or Build.PL.
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+SHA1 b982ba8f1717d11b34a3aa3c2e08740c45230d36 Changes
+SHA1 b4aeb5f67c7c9dd1d0b0fc2c8b5bcf53ea9a32a1 MANIFEST
+SHA1 3efa30c743945fd55ecfc42bcbcd378d26e1652f META.yml
+SHA1 48f566b4db35d168e89a141c766bde42f70fbc89 Makefile.PL
+SHA1 b3b67d3cdc2f89228ebb7a80d4d3b1c1418c56ab README
+SHA1 2f77b0587e3b1ee8a60b587fdbc882e965244bba eg/01_template.pl
+SHA1 90ec0dabf5681a2d95de447b117b5bb6eea4ca88 eg/02_turkish.pl
+SHA1 ba84a5b8e8feaabdce287230dda28b9820e8da0d eg/03_standard.pl
+SHA1 609524f0f1fb3ee55541b2ad3fa16cef52c75213 eg/04_simple.pl
+SHA1 da39a3ee5e6b4b0d3255bfef95601890afd80709 eg/password.txt
+SHA1 b6e5b42a39cea5c85802dcee0ae1e24e34715843 lib/CGI/Auth/Basic.pm
+SHA1 c7c7dc46509e44459bd93d0d926852e06a9ac62e t/01_use.t
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.2.5 (MingW32)
+
+iD8DBQFBNHwRWQFP8hSD6kQRApP5AJ9Cz5li94sUB8VpEl+F+3UxaWhQ3gCg6ayt
+GdOAjMgTCTAHWVOF/0kXCLM=
+=8qY+
+-----END PGP SIGNATURE-----
