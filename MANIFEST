@@ -4,10 +4,14 @@ eg/02_turkish.pl
 eg/03_standard.pl
 eg/04_simple.pl
 eg/password.txt
-t/01_use.t
+t/1-use.t
+t/2-pod.t
+t/3-pod-coverage.t
+t/skip.test
 Changes
 Makefile.PL
+Build.PL
 MANIFEST
+MANIFEST.SKIP
 README
-SIGNATURE
-META.yml                                 Module meta-data (added by MakeMaker)
+META.yml

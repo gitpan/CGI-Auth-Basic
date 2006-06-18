@@ -1,8 +1,17 @@
 package CGI::Auth::Basic;
 use strict;
-use vars qw[$VERSION $AUTOLOAD $RE %ERROR $FATAL_HEADER];
+use vars qw[$VERSION $AUTOLOAD $RE %ERROR $FATAL_HEADER $CAN_CRYPT];
 
-$VERSION = "1.02";
+$VERSION = '1.10';
+
+CHECK_CRYPT: {
+   eval "crypt('aa','aa')"; # The crypt() function is unimplemented due to excessive paranoia
+   $CAN_CRYPT = $@ ? 0 : 1;
+   unless ($CAN_CRYPT) {
+      eval {require Crypt::UnixCrypt};
+      die "Your perl version does not implament crypt(). Upgrade perl or Install Crypt::UnixCrypt." if $@;
+   }
+}
 
 $RE = qr[^\w\./]; # regex for passwords
 
@@ -25,7 +34,7 @@ sub new {
    my $class = shift;
    my $self  = {};
    bless $self, $class;
-   $self->fatal($ERROR{INVALID_OPTION}) if scalar(@_) % 2;
+   $self->_fatal($ERROR{INVALID_OPTION}) if scalar(@_) % 2;
    my %o = @_;
 
    if ($o{cgi_object} eq 'AUTOLOAD_CGI') {
@@ -35,7 +44,7 @@ sub new {
       # long: i_have_another_cgi_like_object_and_i_want_to_use_it
       # don't know if such a module exists :p
       unless ($o{ihacloaiwtui}) {
-         ref $o{cgi_object} eq 'CGI' or $self->fatal($ERROR{CGI_OBJECT});
+         ref $o{cgi_object} eq 'CGI' or $self->_fatal($ERROR{CGI_OBJECT});
       }
    }
 
@@ -43,12 +52,12 @@ sub new {
    if ($o{file} and -e $o{file} and not -d $o{file}) {
       $self->{password_file_path} = $o{file};
       # Don't execute until check_user() called.
-      $password = sub {$self->pfile_content};
+      $password = sub {$self->_pfile_content};
    } else {
       $password = $o{password};
    }
 
-   $self->fatal($ERROR{NO_PASSWORD}) unless $password;
+   $self->_fatal($ERROR{NO_PASSWORD}) unless $password;
 
    $self->{password}       = $password;
    $self->{cgi}            = $o{cgi_object};
@@ -65,7 +74,7 @@ sub new {
    $self->{use_flock}      = $o{use_flock}      || 1;
    $self->{hidden}         = $o{hidden}         || [];
    unless(ref($self->{hidden}) and ref($self->{hidden}) eq 'ARRAY') {
-      $self->fatal("hidden parameter must be an arrayref!")
+      $self->_fatal("hidden parameter must be an arrayref!")
    }
    my $hidden;
    my @hidden_q;
@@ -88,8 +97,15 @@ sub new {
                                 _TEMPLATE_NAMES
                                ];
    $self->{EXIT_PROGRAM} = sub {CORE::exit()};
-   $self->init;
+   $self->_init;
    return $self;
+}
+
+sub _crypt {
+   my $plain = shift;
+   my $salt  = shift;
+   return $CAN_CRYPT ? crypt($plain, $salt)
+                     : Crypt::UnixCrypt::crypt($plain, $salt);
 }
 
 sub exit_code {
@@ -100,7 +116,7 @@ sub exit_code {
    }
 }
 
-sub init {
+sub _init {
    my $self = shift;
    # Set default titles
    $self->{_TEMPLATE_TITLE} = {
@@ -117,26 +133,26 @@ sub init {
    $self->{_TEMPLATE_NAMES}      = [ qw( login_form screen logoff_link change_pass_form ) ];
 }
 
-sub setup_password {
+sub _setup_password {
    my $self = shift;
-      $self->fatal($ERROR{UPDATE_PFILE}) unless $self->{setup_pfile};
+      $self->_fatal($ERROR{UPDATE_PFILE}) unless $self->{setup_pfile};
    unless ($self->{cgi}->param('change_password')) {
-      $self->screen(content => $self->change_pass_form($ERROR{EMPTY_FORM_PFIELD}),
-                    title   => $self->get_title('change_pass_form'));
+      $self->_screen(content => $self->_change_pass_form($ERROR{EMPTY_FORM_PFIELD}),
+                    title   => $self->_get_title('change_pass_form'));
    }
    my $password = $self->{cgi}->param($self->{cookie_id}.'_new');
-   $self->check_password($password);
-   $self->update_pfile($password);
-   $self->screen(content => $self->get_title('password_created'),
-                 title   => $self->get_title('password_created'),
-                 cookie  => $self->empty_cookie,
+   $self->_check_password($password);
+   $self->_update_pfile($password);
+   $self->_screen(content => $self->_get_title('password_created'),
+                 title   => $self->_get_title('password_created'),
+                 cookie  => $self->_empty_cookie,
                  forward => 1);
 }
 
-sub check_password {
+sub _check_password {
    my $self     = shift;
    my $password = shift;
-   $self->error($ERROR{ILLEGAL_PASSWORD}) 
+   $self->_error($ERROR{ILLEGAL_PASSWORD}) 
     if not $password or
            $password =~ /\s/  or 
        length($password) < 3  or 
@@ -144,21 +160,21 @@ sub check_password {
        $password =~ /$RE/;
 }
 
-sub update_pfile {
+sub _update_pfile {
    my $self     = shift;
    my $password = shift;
-   open  PASSWORD, '>'.$self->{password_file_path} or $self->fatal($ERROR{FILE_WRITE}." $!");
+   open  PASSWORD, '>'.$self->{password_file_path} or $self->_fatal($ERROR{FILE_WRITE}." $!");
    flock PASSWORD,Fcntl::LOCK_EX() if $self->{use_flock};
-   print PASSWORD $self->encode($password);
+   print PASSWORD $self->_encode($password);
    flock PASSWORD,Fcntl::LOCK_UN() if $self->{use_flock};
    close PASSWORD;
    chmod $self->{chmod_value}, $self->{password_file_path};
 }
 
-sub pfile_content {
+sub _pfile_content {
    my $self = shift;
    local $/;
-   open PASSWORD, $self->{password_file_path} or $self->fatal($ERROR{FILE_READ}." $!");
+   open PASSWORD, $self->{password_file_path} or $self->_fatal($ERROR{FILE_READ}." $!");
    chomp(my $flat = <PASSWORD>);
    close PASSWORD;
    $flat =~ s,\s,,gs;
@@ -167,54 +183,54 @@ sub pfile_content {
 
 sub check_user {
    my $self = shift;
-   $self->check_user_real;
+   $self->_check_user_real;
 
    # We have a valid user. Below are accessible as user functions
    if ($self->{cgi}->param($self->{changep_param})) {
       unless ($self->{cgi}->param('change_password')) {
-         $self->screen(content => $self->change_pass_form,
-                       title   => $self->get_title('change_pass_form'));
+         $self->_screen(content => $self->_change_pass_form,
+                       title   => $self->_get_title('change_pass_form'));
       }
       my $password = $self->{cgi}->param($self->{cookie_id}.'_new');
-      $self->check_password($password);
-      $self->update_pfile($password);
-      $self->screen(content => $self->get_title('password_changed'),
-                    title   => $self->get_title('password_changed'),
-                    cookie  => $self->empty_cookie,
+      $self->_check_password($password);
+      $self->_update_pfile($password);
+      $self->_screen(content => $self->_get_title('password_changed'),
+                    title   => $self->_get_title('password_changed'),
+                    cookie  => $self->_empty_cookie,
                     forward => 1);
    }
 }
 
 # Main method to validate a user
-sub check_user_real {
+sub _check_user_real {
    my $self = shift;
    my $pass_param;
 
    if(ref($self->{password}) eq 'CODE') {
       require Fcntl; # we need flock constants
-      $self->{password} = $self->{password}->() || $self->setup_password;
+      $self->{password} = $self->{password}->() || $self->_setup_password;
    }
 
    if ($self->{cgi}->param($self->{logoff_param})) {
-      $self->screen(content => $self->get_title('logged_off'),
-                    title   => $self->get_title('logged_off'),
-                    cookie  => $self->empty_cookie,
+      $self->_screen(content => $self->_get_title('logged_off'),
+                    title   => $self->_get_title('logged_off'),
+                    cookie  => $self->_empty_cookie,
                     forward => 1);
    }
 
    # Attemp to login via form
    if ($pass_param = $self->{cgi}->param($self->{cookie_id})){
-      if ($pass_param !~ m/$RE/ and $self->match_pass($pass_param)) {
+      if ($pass_param !~ m/$RE/ and $self->_match_pass($pass_param)) {
          $self->{logged_in} = 1;
-         $self->screen(content => $self->get_title('login_success'),
-                       title   => $self->get_title('login_success'),
+         $self->_screen(content => $self->_get_title('login_success'),
+                       title   => $self->_get_title('login_success'),
                        forward => 1,
                        cookie  => $self->{cgi}->cookie(-name    => $self->{cookie_id},
                                                        -value   => $self->{password}),
                                                        -expires => $self->{cookie_timeout});
       } else {
-         $self->screen(content => $self->login_form($ERROR{WRONG_PASSWORD}), 
-                       title   => $self->get_title('login_form'));
+         $self->_screen(content => $self->_login_form($ERROR{WRONG_PASSWORD}), 
+                       title   => $self->_get_title('login_form'));
       }
    # Attemp to login via cookie
    } elsif ($pass_param = $self->{cgi}->cookie($self->{cookie_id})) {
@@ -222,19 +238,19 @@ sub check_user_real {
          $self->{logged_in} = 1;
          return 1;
       } else {
-         $self->screen(content => $ERROR{INVALID_COOKIE},
-                       title   => $self->get_title('cookie_error'),
-                       cookie  => $self->empty_cookie,
+         $self->_screen(content => $ERROR{INVALID_COOKIE},
+                       title   => $self->_get_title('cookie_error'),
+                       cookie  => $self->_empty_cookie,
                        forward => 1);
       }
    } else {
-      $self->screen(content => $self->login_form,
-                    title   => $self->get_title('login_form'));
+      $self->_screen(content => $self->_login_form,
+                    title   => $self->_get_title('login_form'));
    }
 }
 
 # Private method. Used internally to compile templates
-sub compile_template {
+sub _compile_template {
    my $self = shift;
    my $key  = shift;
    my $code = $self->{'template_'.$key};
@@ -250,7 +266,7 @@ sub compile_template {
    return $code;
 }
 
-sub get_title {
+sub _get_title {
    my $self  = shift;
    my $key   = shift or return;
    return $self->{_TEMPLATE_TITLE_USER}{'title_'.$key} || $self->{_TEMPLATE_TITLE}{'title_'.$key};
@@ -258,7 +274,7 @@ sub get_title {
 
 sub set_template {
    my $self = shift;
-   $self->fatal($ERROR{INVALID_OPTION}) if scalar(@_) % 2;
+   $self->_fatal($ERROR{INVALID_OPTION}) if scalar(@_) % 2;
    my %o = @_;
    if ($o{delete_all}) {
       foreach my $key (keys %{$self}) {
@@ -275,17 +291,17 @@ sub set_template {
 
 sub set_title {
    my $self = shift;
-   $self->fatal($ERROR{INVALID_OPTION}) if scalar(@_) % 2;
+   $self->_fatal($ERROR{INVALID_OPTION}) if scalar(@_) % 2;
    my %o = @_;
    foreach (keys %o) {
       $self->{_TEMPLATE_TITLE_USER}{'title_'.$_} = $o{$_} if $self->{_TEMPLATE_TITLE}{'title_'.$_};
    }
 }
 
-sub login_form {
+sub _login_form {
    my $self = shift;
       $self->{page_form_error} = shift if $_[0];
-   my $code = $self->compile_template('login_form')
+   my $code = $self->_compile_template('login_form')
               ||
               qq~
 <span class="error">$self->{page_form_error}</span>
@@ -313,10 +329,10 @@ sub login_form {
    return $code;
 }
 
-sub change_pass_form {
+sub _change_pass_form {
    my $self = shift;
       $self->{page_form_error} = shift if $_[0];
-   my $code = $self->compile_template('change_pass_form')
+   my $code = $self->_compile_template('change_pass_form')
               ||
               qq~
 <span class="error">$self->{page_form_error}</span>
@@ -347,20 +363,20 @@ sub change_pass_form {
 sub logoff_link {
    my $self = shift;
    my $query = $self->{hidden_q} ? "&".$self->{hidden_q} : "";
-   return $self->compile_template('logoff_link')
+   return $self->_compile_template('logoff_link')
            ||
           qq~<span class="small">[<a href="$self->{program}?$self->{logoff_param}=1$query">Log-off</a> - <a href="$self->{program}?$self->{changep_param}=1$query">Change password</a>]</span> ~ if $self->{logged_in};
    return '';
 }
 
 # For form errors
-sub error { 
+sub _error { 
    my $self  = shift;
    my $error = shift;
-   $self->screen(content => qq~<span class="error">$error</span>~, title => $self->get_title('error'));
+   $self->_screen(content => qq~<span class="error">$error</span>~, title => $self->_get_title('error'));
 }
 
-sub screen {
+sub _screen {
    my $self   = shift;
    my %p      = scalar(@_) % 2 ? () : @_;
    my @cookie = $p{cookie} ? (-cookie => $p{cookie}) : (); 
@@ -371,7 +387,7 @@ sub screen {
    $self->{page_title}          = $p{title};
    $self->{page_refresh}        = $p{forward} ? qq~<meta http-equiv="refresh" content="0; url=$refresh_url">~ : '';
    $self->{page_inline_refresh} = $p{forward} ? qq~<a href="$refresh_url">&#187;</a>~ : '';
-   my $out = $self->compile_template('screen')
+   my $out = $self->_compile_template('screen')
               ||
              qq~<html>
    <head>
@@ -394,7 +410,7 @@ sub screen {
    </body>
    </html>~;
    print $self->{cgi}->header(-charset => $self->{http_charset},@cookie).$out;
-   $self->exit_program;
+   $self->_exit_program;
 }
 
 sub fatal_header {
@@ -407,7 +423,7 @@ sub fatal_header {
 }
 
 # Trap deadly errors
-sub fatal {
+sub _fatal {
    my $self      = shift;
    my $error     = shift || '';
    my @rep       = caller 0;
@@ -438,35 +454,38 @@ sub fatal {
       </body>
       </html>~;
    print $fatal;
-   $self->exit_program;
+   $self->_exit_program;
 }
 
-sub match_pass  {
+sub _match_pass  {
    my $self = shift;
    my $form = shift;
-   return crypt($form, substr($self->{password},0,2)) eq $self->{password};
+   return _crypt($form, substr($self->{password},0,2)) eq $self->{password};
 }
 
-sub encode   {
+sub _encode   {
    my $self  = shift;
    my $plain = shift;
-   return crypt($plain, join('',('.','/',0..9,'A'..'Z','a'..'z')[rand 64,rand 64]));
+   return _crypt($plain, join('',('.','/',0..9,'A'..'Z','a'..'z')[rand 64,rand 64]));
 }
 
-sub empty_cookie {
+sub _empty_cookie {
    my $self = shift;
    return $self->{cgi}->cookie(-name    => $self->{cookie_id},
                                -value   => '', 
                                -expires => '-10y')
 }
 
-sub exit_program { shift->{EXIT_PROGRAM}->() }
+sub _exit_program {
+   my $exit = shift->{EXIT_PROGRAM};
+   $exit ? $exit->() : exit;
+}
 
 sub AUTOLOAD {
    my $self = shift;
    my $name = $AUTOLOAD;
       $name =~ s,.*:,,;
-      $self->fatal(sprintf $ERROR{UNKNOWN_METHOD}, $name);
+      $self->_fatal(sprintf $ERROR{UNKNOWN_METHOD}, $name);
 }
 
 sub DESTROY {}
@@ -776,14 +795,14 @@ Passwords are checked with C<$CGI::Auth::Basic::RE> class variable.
 =head1 ERROR HANDLING
 
 Your script will die on any perl syntax error. But the API errors
-are trapped by a special method called B<fatal()>. If you do something 
+are trapped by a private fatal error handler. If you do something 
 illegal with the methods like; wrong number of parameters, or calling an 
-undefined method, it'll be trapped by C<fatal>. Currently, you can not 
-control the behaviour of this method (unless you subclass it), but you can
-define it's HTTP Header; see L<fatal_header|/fatal_header>. On any 
-fatal error, it will print the error message and some usefull information
-as a web page, then it will terminate the program. You can set the 
-exit code with L<exit_code|/exit_code> method.
+undefined method, it'll be trapped by C<fatal handler>. Currently, you
+can not control the behaviour of this method (unless you subclass it), 
+but you can define it's HTTP Header; see L<fatal_header|/fatal_header>.
+On any fatal error, it will print the error message and some usefull 
+information as a web page, then it will terminate the program. You can
+set the exit code with L<exit_code|/exit_code> method.
 
 All error messages (including fatal) are accessible via the class variable 
 C<%CGI::Auth::Basic::ERROR>. Dump this variable to see the keys and values.
@@ -793,6 +812,13 @@ If you want to change the error messages, do this before calling C<new()>.
 
 See the 'eg' directory in the distribution. Download the distro from 
 CPAN, if you don't have it.
+
+=head1 CAVEATS
+
+If you are using perl 5.5.3 and older on Win32 platform (this issue
+may not be limited with Win32 but I'm not sure), you may need to 
+install L<Crypt::UnixCrypt>. The C<CORE::crypt()> function is not 
+implemented on this version.
 
 =head1 BUGS
 
@@ -808,11 +834,12 @@ Burak Gürsoy, E<lt>burakE<64>cpan.orgE<gt>
 
 =head1 COPYRIGHT
 
-Copyright 2004 Burak Gürsoy. All rights reserved.
+Copyright 2004-2006 Burak Gürsoy. All rights reserved.
 
 =head1 LICENSE
 
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself. 
+This library is free software; you can redistribute it and/or modify 
+it under the same terms as Perl itself, either Perl version 5.8.8 or, 
+at your option, any later version of Perl 5 you may have available.
 
 =cut

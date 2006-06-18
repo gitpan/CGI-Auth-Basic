@@ -1,6 +1,18 @@
 Revision history for Perl extension CGI::Auth::Basic.
 
-Time zone is GMT+2.
+Time zone is GMT+2
+
+1.10 Sun Jun 18 04:07:02 2006
+	=> SIGNATURE sent to oblivion :p
+	=> Exit handler fix.
+	=> Oooh... I've just faced the infamous 
+	   "The crypt() function is unimplemented due to excessive paranoia"
+	   thing. Module now checks this error and enables 
+	   Crypt::UnixCrypt::crypt() if 'Crypt::UnixCrypt' exists, dies 
+	   otherwise.
+	=> Updated test suite.
+	=> Module::Build support.
+	=> Renamed some private methods to pass pod coverage test.
 
 1.02 Sun Nov  7 05:27:49 2004
 	=> Changed default CHMOD value to 0777 (it was 0644).

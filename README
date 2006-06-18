@@ -21,18 +21,20 @@ or under Windows:
    nmake test
    nmake install
 
+Alternatively, you can use the Build.PL
+
+   perl Build.PL
+   perl Build
+   perl Build test
+   perl Build install
+
 DEPENDENCIES
 
-This module requires this other module:
-
-	CGI
-	Fcntl
-
-Which are standard in perl distributions.
+None() if $your_perl >= 5.004;
 
 COPYRIGHT AND LICENCE
 
-Copyright (C) 2004 Burak Gürsoy <burak@cpan.org>. All rights reserved.
+Copyright (C) 2004-2005 Burak Gürsoy <burak@cpan.org>. All rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself. 
