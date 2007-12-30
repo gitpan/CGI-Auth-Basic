@@ -1,7 +1,7 @@
 #!/usr/bin/env perl -w
 # Simple test. Just try to use the module.
 use strict;
-use Test;
+use Test::More;
 BEGIN { plan tests => 1 }
 
 use CGI::Auth::Basic; 

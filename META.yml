@@ -1,17 +1,19 @@
 ---
 name: CGI-Auth-Basic
-version: 1.10
+version: 1.11
 author:
   - 'Burak Gursoy <burak@cpan.org>'
 abstract: Basic CGI authentication interface.
 license: perl
 resources:
   license: http://dev.perl.org/licenses/
+requires:
+  Test::More: 0
 provides:
   CGI::Auth::Basic:
     file: lib/CGI/Auth/Basic.pm
-    version: 1.10
-generated_by: Module::Build version 0.2801
+    version: 1.11
+generated_by: Module::Build version 0.2808
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html
   version: 1.2

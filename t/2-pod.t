@@ -1,6 +1,6 @@
 #!/usr/bin/env perl -w
 use strict;
-BEGIN { do 't/skip.test' or die "Can't include skip.test!" }
+use Test::More;
 
 eval "use Test::Pod 1.00";
 plan skip_all => "Test::Pod 1.00 required for testing POD" if $@;

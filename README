@@ -32,9 +32,13 @@ DEPENDENCIES
 
 None() if $your_perl >= 5.004;
 
+BUILD DEPENDENCIES
+
+   Test::More
+
 COPYRIGHT AND LICENCE
 
-Copyright (C) 2004-2005 Burak Gürsoy <burak@cpan.org>. All rights reserved.
+Copyright (C) 2004-2008 Burak Gürsoy <burak@cpan.org>. All rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself. 

@@ -2,14 +2,14 @@ package CGI::Auth::Basic;
 use strict;
 use vars qw[$VERSION $AUTOLOAD $RE %ERROR $FATAL_HEADER $CAN_CRYPT];
 
-$VERSION = '1.10';
+$VERSION = '1.11';
 
 CHECK_CRYPT: {
    eval "crypt('aa','aa')"; # The crypt() function is unimplemented due to excessive paranoia
    $CAN_CRYPT = $@ ? 0 : 1;
-   unless ($CAN_CRYPT) {
+   if ( ! $CAN_CRYPT ) {
       eval {require Crypt::UnixCrypt};
-      die "Your perl version does not implament crypt(). Upgrade perl or Install Crypt::UnixCrypt." if $@;
+      die "Your perl version does not implement crypt(). Upgrade perl or Install Crypt::UnixCrypt" if $@;
    }
 }
 
@@ -79,6 +79,8 @@ sub new {
    my $hidden;
    my @hidden_q;
    foreach (@{ $self->{hidden} }) {
+      next if $_->[0] eq $self->{cookie_id}; # password!
+      next if $_->[0] eq $self->{cookie_id} . '_new'; # password!
       $hidden .= qq~<input type="hidden" name="$_->[0]" value="$_->[1]">\n~;
       push @hidden_q,  $_->[0]."=".$_->[1];
    }
@@ -380,7 +382,27 @@ sub _screen {
    my $self   = shift;
    my %p      = scalar(@_) % 2 ? () : @_;
    my @cookie = $p{cookie} ? (-cookie => $p{cookie}) : (); 
-   my $refresh_url = $self->{hidden_q} ? "$self->{program}?$self->{hidden_q}" : $self->{program};
+
+   my $refresh_url;
+   if ( $self->{hidden_q} ) {
+      $refresh_url = "$self->{program}?$self->{hidden_q}";
+   } else {
+      my @qs;
+      foreach my $p ( $self->{cgi}->param ) {
+         next if $p eq $self->{logoff_param};
+         next if $p eq $self->{changep_param};
+         next if $p eq $self->{cookie_id};
+         next if $p eq $self->{cookie_id} . '_new';
+         push @qs, $p . '=' . $self->{cgi}->param( $p );
+      }
+      my $url = $self->{program};
+      if ( @qs ) {
+         $url =~ s{\?}{}xmsg;
+         $url .= '?' . join('&', @qs);
+      }
+      $refresh_url = $url;
+   }
+
    # Set template vars
    $self->{page_logoff_link}    = $self->logoff_link;
    $self->{page_content}        = $p{content};
@@ -834,7 +856,7 @@ Burak Gürsoy, E<lt>burakE<64>cpan.orgE<gt>
 
 =head1 COPYRIGHT
 
-Copyright 2004-2006 Burak Gürsoy. All rights reserved.
+Copyright 2004-2008 Burak Gürsoy. All rights reserved.
 
 =head1 LICENSE
 
