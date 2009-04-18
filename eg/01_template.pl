@@ -136,5 +136,3 @@ return
    INVALID_COOKIE    => "Your cookie info includes invalid data and it has been deleted by the program.",
    ;
 }
-
-__END__

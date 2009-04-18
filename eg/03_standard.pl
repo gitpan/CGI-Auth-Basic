@@ -9,5 +9,3 @@ my $auth = CGI::Auth::Basic->new(cgi_object => $cgi, file => "./password.txt");
 my $logoff = $auth->logoff_link;
 
 print $cgi->header . "$logoff You can use this program. Now anything that this program does is accessible! :)";
-
-__END__

@@ -141,5 +141,3 @@ return
    INVALID_COOKIE    => "Kurabiyeniz geçersiz bilgi içeriyor ve bu kurabiye program tarafýndan silindi.",
    ;
 }
-
-__END__
