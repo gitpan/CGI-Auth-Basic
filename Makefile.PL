@@ -1,15 +1,18 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+use strict;
 use ExtUtils::MakeMaker;
+use lib qw( builder );
+use Build::Spec qw( mm_spec );
+
+my %spec = mm_spec;
 
 WriteMakefile(
-    'NAME'         => 'CGI::Auth::Basic',
-    'VERSION_FROM' => 'lib/CGI/Auth/Basic.pm',
-    'PREREQ_PM'    => {
-        'Test::More' => '0.40',
-    },
+    NAME         => $spec{module_name},
+    VERSION_FROM => $spec{VERSION_FROM},
+    PREREQ_PM    => $spec{PREREQ_PM},
+    PL_FILES     => {},
     ($] >= 5.005 ? (
-    'AUTHOR'       => 'Burak Gursoy <burak@cpan.org>',
-    'ABSTRACT'     => 'Basic CGI authentication interface',
+    AUTHOR       => $spec{dist_author},
+    ABSTRACT     => $spec{ABSTRACT},
     ) : ()),
-    PL_FILES       => {},
 );

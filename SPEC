@@ -1,0 +1,8 @@
+{
+    module_name    => 'CGI::Auth::Basic',
+    meta_merge => {
+        resources => {
+            repository => 'http://bitbucket.org/burak/cpan-cgi-auth-basic/',
+        },
+    },
+}

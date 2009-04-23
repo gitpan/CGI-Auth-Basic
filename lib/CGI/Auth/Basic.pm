@@ -2,7 +2,7 @@ package CGI::Auth::Basic;
 use strict;
 use vars qw[$VERSION $AUTOLOAD $RE %ERROR $FATAL_HEADER $CAN_CRYPT];
 
-$VERSION = '1.20';
+$VERSION = '1.21';
 
 CHECK_CRYPT: {
    eval "crypt('aa','aa')"; # The crypt() function is unimplemented due to excessive paranoia
@@ -549,8 +549,8 @@ or you can just say:
 
 =head1 DESCRIPTION
 
-This document describes version C<1.20> of C<CGI::Auth::Basic>
-released on C<18 April 2009>.
+This document describes version C<1.21> of C<CGI::Auth::Basic>
+released on C<23 April 2009>.
 
 This module adds a simple (may be a little complex if you use all
 features) user validation system on top of your program. If you have 

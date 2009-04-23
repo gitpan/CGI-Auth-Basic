@@ -1,6 +1,6 @@
 ---
 name: CGI-Auth-Basic
-version: 1.20
+version: 1.21
 author:
   - 'Burak Gursoy <burak@cpan.org>'
 abstract: Basic CGI authentication interface.
@@ -13,10 +13,11 @@ build_requires:
 provides:
   CGI::Auth::Basic:
     file: lib/CGI/Auth/Basic.pm
-    version: 1.20
+    version: 1.21
 no_index:
   directory:
-    - tools
+    - monolithic_version
+    - builder
     - t
 generated_by: Module::Build version 0.32
 meta-spec:
