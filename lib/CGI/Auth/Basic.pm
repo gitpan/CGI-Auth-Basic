@@ -1,50 +1,55 @@
 package CGI::Auth::Basic;
 use strict;
-use vars qw[$VERSION $AUTOLOAD $RE %ERROR $FATAL_HEADER $CAN_CRYPT];
+use warnings;
+use constant EMPTY_STRING        => q{};
+use constant CHMOD_VALUE         => 0777;
+use constant MIN_PASSWORD_LENGTH =>  3;
+use constant MAX_PASSWORD_LENGTH => 32;
+use constant CRYP_CHARS          => q{.}, q{,}, q{/}, 0..9, q{A}..q{Z}, q{a}..q{z};
+use constant RANDOM_NUM          => 64;
+use Carp qw( croak );
 
-$VERSION = '1.21';
+our $VERSION = '1.22';
 
-CHECK_CRYPT: {
-   eval "crypt('aa','aa')"; # The crypt() function is unimplemented due to excessive paranoia
-   $CAN_CRYPT = $@ ? 0 : 1;
-   if ( ! $CAN_CRYPT ) {
-      eval {require Crypt::UnixCrypt};
-      die "Your perl version does not implement crypt(). Upgrade perl or Install Crypt::UnixCrypt" if $@;
-   }
-}
-
-$RE = qr[^\w\./]; # regex for passwords
+our $RE = qr{\A\w\./}xms; # regex for passwords
+our $FATAL_HEADER;
 
 # Fatal and other error messages
-%ERROR = (
-   INVALID_OPTION    => "Options must be in 'param => value' format!",
-   CGI_OBJECT        => "I need a CGI object to run!!!",
-   FILE_READ         => "Error opening pasword file: ",
-   NO_PASSWORD       => "No password specified (or password file can not be found)!",
-   UPDATE_PFILE      => "Your password file is empty and your current setting does not allow this code to update the file! Please update your password file.",
-   ILLEGAL_PASSWORD  => "Illegal password! Not accepted. Go back and enter a new one",
-   FILE_WRITE        => "Error opening password file for update: $!",
-   UNKNOWN_METHOD    => "There is no method called '<b>%s</b>'. Check your coding.",
-   EMPTY_FORM_PFIELD => "You didn't set any password (password file is empty)!",
-   WRONG_PASSWORD    => "<p>Wrong password!</p>",
-   INVALID_COOKIE    => "Your cookie info includes invalid data and it has been deleted by the program.",
+our %ERROR = (
+   INVALID_OPTION    => 'Options must be in "param => value" format!',
+   CGI_OBJECT        => 'I need a CGI object to run!!!',
+   FILE_READ         => 'Error opening pasword file: ',
+   NO_PASSWORD       => 'No password specified (or password file can not be found)!',
+   UPDATE_PFILE      => 'Your password file is empty and your current setting does not allow this code to update the file! Please update your password file.',
+   ILLEGAL_PASSWORD  => 'Illegal password! Not accepted. Go back and enter a new one',
+   FILE_WRITE        => 'Error opening password file for update: ',
+   UNKNOWN_METHOD    => 'There is no method called "<b>%s</b>". Check your coding.',
+   EMPTY_FORM_PFIELD => q{You didn't set any password (password file is empty)!},
+   WRONG_PASSWORD    => '<p>Wrong password!</p>',
+   INVALID_COOKIE    => 'Your cookie info includes invalid data and it has been deleted by the program.',
 );
 
 sub new {
-   my $class = shift;
+   my($class, @args) = @_;
    my $self  = {};
    bless $self, $class;
-   $self->_fatal($ERROR{INVALID_OPTION}) if scalar(@_) % 2;
-   my %o = @_;
+   $self->_fatal($ERROR{INVALID_OPTION}) if @args % 2;
+   $self->_set_options( @args );
+   $self->_init;
+   return $self;
+}
 
-   if ($o{cgi_object} eq 'AUTOLOAD_CGI') {
+sub _set_options {
+   my($self, %o) = @_;
+   if ( $o{cgi_object} eq 'AUTOLOAD_CGI' ) {
       require CGI;
       $o{cgi_object} = CGI->new;
-   } else {
+   }
+   else {
       # long: i_have_another_cgi_like_object_and_i_want_to_use_it
       # don't know if such a module exists :p
-      unless ($o{ihacloaiwtui}) {
-         ref $o{cgi_object} eq 'CGI' or $self->_fatal($ERROR{CGI_OBJECT});
+      if ( ! $o{ihacloaiwtui} ) {
+         $self->_fatal($ERROR{CGI_OBJECT}) if ref $o{cgi_object} ne 'CGI';
       }
    }
 
@@ -53,133 +58,149 @@ sub new {
       $self->{password_file_path} = $o{file};
       # Don't execute until check_user() called.
       $password = sub {$self->_pfile_content};
-   } else {
+   }
+   else {
       $password = $o{password};
    }
 
-   $self->_fatal($ERROR{NO_PASSWORD}) unless $password;
+   $self->_fatal($ERROR{NO_PASSWORD}) if ! $password;
 
    $self->{password}       = $password;
    $self->{cgi}            = $o{cgi_object};
-   $self->{program}        = $self->{cgi}->url  || '';
+   $self->{program}        = $self->{cgi}->url  || EMPTY_STRING;
 
    # object tables           user specified         default
    $self->{cookie_id}      = $o{cookie_id}      || 'authpass';
    $self->{http_charset}   = $o{http_charset}   || 'ISO-8859-1';
    $self->{logoff_param}   = $o{logoff_param}   || 'logoff';
    $self->{changep_param}  = $o{changep_param}  || 'changepass';
-   $self->{cookie_timeout} = $o{cookie_timeout} || '';
+   $self->{cookie_timeout} = $o{cookie_timeout} || EMPTY_STRING;
    $self->{setup_pfile}    = $o{setup_pfile}    || 0;
-   $self->{chmod_value}    = $o{chmod_value}    || 0777;
+   $self->{chmod_value}    = $o{chmod_value}    || CHMOD_VALUE;
    $self->{use_flock}      = $o{use_flock}      || 1;
    $self->{hidden}         = $o{hidden}         || [];
-   unless(ref($self->{hidden}) and ref($self->{hidden}) eq 'ARRAY') {
-      $self->_fatal("hidden parameter must be an arrayref!")
+   return;
+}
+
+sub exit_code {
+   my $self = shift;
+   my $code = shift || return;
+   $self->{EXIT_PROGRAM} = $code if ref $code eq 'CODE';
+   return;
+}
+
+sub _init {
+   my $self = shift;
+
+   if ( ! ref $self->{hidden} eq 'ARRAY' ) {
+      $self->_fatal('hidden parameter must be an arrayref!');
    }
+
    my $hidden;
    my @hidden_q;
    foreach (@{ $self->{hidden} }) {
       next if $_->[0] eq $self->{cookie_id}; # password!
       next if $_->[0] eq $self->{cookie_id} . '_new'; # password!
       $hidden .= qq~<input type="hidden" name="$_->[0]" value="$_->[1]">\n~;
-      push @hidden_q,  $_->[0]."=".$_->[1];
+      push @hidden_q,  join q{=}, $_->[0], $_->[1];
    }
-   $self->{hidden_q} = @hidden_q ? join("&",@hidden_q) : "";
-   $self->{hidden} = $hidden || "";
 
-   $self->{logged_in}      = 0;
-   # Temporary template variables (but some are not temporary :))
-   $self->{$_} = '' foreach qw[
-                                page_form_error 
-                                page_logoff_link 
-                                page_content 
-                                page_title
-                                _TEMPLATE_TITLE
-                                _TEMPLATE_TITLE_USER
-                                _TEMPLATE_NAMES
-                               ];
+   $self->{hidden_q}     = @hidden_q ? join(q{&}, @hidden_q) : EMPTY_STRING;
+   $self->{hidden}       = $hidden || EMPTY_STRING;
+   $self->{logged_in}    = 0;
    $self->{EXIT_PROGRAM} = sub {CORE::exit()};
-   $self->_init;
-   return $self;
-}
 
-sub _crypt {
-   my $plain = shift;
-   my $salt  = shift;
-   return $CAN_CRYPT ? crypt($plain, $salt)
-                     : Crypt::UnixCrypt::crypt($plain, $salt);
-}
-
-sub exit_code {
-   my $self = shift;
-   my $code = shift || return;
-   if (ref $code and ref $code eq 'CODE') {
-      $self->{EXIT_PROGRAM} = $code;
-   }
-}
-
-sub _init {
-   my $self = shift;
    # Set default titles
    $self->{_TEMPLATE_TITLE} = {
-   title_login_form       => 'Login',
-   title_cookie_error     => 'Your invalid cookie has been deleted by the program',
-   title_login_success    => 'You are now logged-in',
-   title_logged_off       => 'You are now logged-off',
-   title_change_pass_form => 'Change password',
-   title_password_created => 'Password created',
-   title_password_changed => "Password changed successfully",
-   title_error            => 'Error',
+      title_login_form       => 'Login',
+      title_cookie_error     => 'Your invalid cookie has been deleted by the program',
+      title_login_success    => 'You are now logged-in',
+      title_logged_off       => 'You are now logged-off',
+      title_change_pass_form => 'Change password',
+      title_password_created => 'Password created',
+      title_password_changed => 'Password changed successfully',
+      title_error            => 'Error',
    };
+
    $self->{_TEMPLATE_TITLE_USER} = {};
-   $self->{_TEMPLATE_NAMES}      = [ qw( login_form screen logoff_link change_pass_form ) ];
+   $self->{_TEMPLATE_NAMES}      =  [
+                                       qw(
+                                          login_form
+                                          screen
+                                          logoff_link
+                                          change_pass_form
+                                       )
+                                    ];
+
+   # Temporary template variables (but some are not temporary :))
+   $self->{$_} = EMPTY_STRING foreach qw(
+      page_form_error 
+      page_logoff_link 
+      page_content 
+      page_title
+      _TEMPLATE_TITLE
+      _TEMPLATE_TITLE_USER
+      _TEMPLATE_NAMES
+   );
+
+   return;
 }
 
 sub _setup_password {
    my $self = shift;
       $self->_fatal($ERROR{UPDATE_PFILE}) unless $self->{setup_pfile};
-   unless ($self->{cgi}->param('change_password')) {
-      $self->_screen(content => $self->_change_pass_form($ERROR{EMPTY_FORM_PFIELD}),
-                    title   => $self->_get_title('change_pass_form'));
+   if ( ! $self->{cgi}->param('change_password') ) {
+      return $self->_screen(
+         content => $self->_change_pass_form($ERROR{EMPTY_FORM_PFIELD}),
+         title   => $self->_get_title('change_pass_form'),
+      );
    }
    my $password = $self->{cgi}->param($self->{cookie_id}.'_new');
    $self->_check_password($password);
    $self->_update_pfile($password);
-   $self->_screen(content => $self->_get_title('password_created'),
-                 title   => $self->_get_title('password_created'),
-                 cookie  => $self->_empty_cookie,
-                 forward => 1);
+   return $self->_screen(
+            content => $self->_get_title('password_created'),
+            title   => $self->_get_title('password_created'),
+            cookie  => $self->_empty_cookie,
+            forward => 1,
+         );
 }
 
 sub _check_password {
    my $self     = shift;
    my $password = shift;
-   $self->_error($ERROR{ILLEGAL_PASSWORD}) 
-    if not $password or
-           $password =~ /\s/  or 
-       length($password) < 3  or 
-       length($password) > 32 or
-       $password =~ /$RE/;
+   my $not_ok   = !      $password                        ||
+                         $password  =~ /\s/xms            ||
+                  length($password) < MIN_PASSWORD_LENGTH ||
+                  length($password) > MAX_PASSWORD_LENGTH ||
+                         $password  =~ $RE;
+   $self->_error( $ERROR{ILLEGAL_PASSWORD} ) if $not_ok;
+   return;
 }
+
 
 sub _update_pfile {
    my $self     = shift;
    my $password = shift;
-   open  PASSWORD, '>'.$self->{password_file_path} or $self->_fatal($ERROR{FILE_WRITE}." $!");
-   flock PASSWORD,Fcntl::LOCK_EX() if $self->{use_flock};
-   print PASSWORD $self->_encode($password);
-   flock PASSWORD,Fcntl::LOCK_UN() if $self->{use_flock};
-   close PASSWORD;
-   chmod $self->{chmod_value}, $self->{password_file_path};
+   require IO::File;
+   my $PASSWORD = IO::File->new;
+   $PASSWORD->open( $self->{password_file_path}, '>' ) or $self->_fatal($ERROR{FILE_WRITE}." $!");
+   flock $PASSWORD, Fcntl::LOCK_EX() if $self->{use_flock};
+   my $pok = print {$PASSWORD} $self->_encode($password);
+   flock $PASSWORD, Fcntl::LOCK_UN() if $self->{use_flock};
+   $PASSWORD->close;
+   return chmod $self->{chmod_value}, $self->{password_file_path};
 }
 
 sub _pfile_content {
    my $self = shift;
-   local $/;
-   open PASSWORD, $self->{password_file_path} or $self->_fatal($ERROR{FILE_READ}." $!");
-   chomp(my $flat = <PASSWORD>);
-   close PASSWORD;
-   $flat =~ s,\s,,gs;
+   require IO::File;
+   my $PASSWORD = IO::File->new;
+   $PASSWORD->open($self->{password_file_path}) or $self->_fatal($ERROR{FILE_READ}." $!");
+   my $flat = do { local $/; my $rv = <$PASSWORD>; $rv };
+   chomp $flat;
+   $PASSWORD->close;
+   $flat =~ s{\s}{}xmsg;
    return $flat;
 }
 
@@ -188,10 +209,12 @@ sub check_user {
    $self->_check_user_real;
 
    # We have a valid user. Below are accessible as user functions
-   if ($self->{cgi}->param($self->{changep_param})) {
-      unless ($self->{cgi}->param('change_password')) {
-         $self->_screen(content => $self->_change_pass_form,
-                       title   => $self->_get_title('change_pass_form'));
+   if ( $self->{cgi}->param($self->{changep_param}) ) {
+      if ( ! $self->{cgi}->param('change_password') ) {
+         $self->_screen(
+            content => $self->_change_pass_form,
+            title   => $self->_get_title('change_pass_form')
+         );
       }
       my $password = $self->{cgi}->param($self->{cookie_id}.'_new');
       $self->_check_password($password);
@@ -201,6 +224,7 @@ sub check_user {
                     cookie  => $self->_empty_cookie,
                     forward => 1);
    }
+   return;
 }
 
 # Main method to validate a user
@@ -214,41 +238,58 @@ sub _check_user_real {
    }
 
    if ($self->{cgi}->param($self->{logoff_param})) {
-      $self->_screen(content => $self->_get_title('logged_off'),
-                    title   => $self->_get_title('logged_off'),
-                    cookie  => $self->_empty_cookie,
-                    forward => 1);
+      $self->_screen(
+         content => $self->_get_title('logged_off'),
+         title   => $self->_get_title('logged_off'),
+         cookie  => $self->_empty_cookie,
+         forward => 1,
+      );
    }
 
    # Attemp to login via form
    if ($pass_param = $self->{cgi}->param($self->{cookie_id})){
-      if ($pass_param !~ m/$RE/ and $self->_match_pass($pass_param)) {
+      if ( $pass_param !~ $RE && $self->_match_pass( $pass_param ) ) {
          $self->{logged_in} = 1;
-         $self->_screen(content => $self->_get_title('login_success'),
-                       title   => $self->_get_title('login_success'),
-                       forward => 1,
-                       cookie  => $self->{cgi}->cookie(-name    => $self->{cookie_id},
-                                                       -value   => $self->{password}),
-                                                       -expires => $self->{cookie_timeout});
-      } else {
-         $self->_screen(content => $self->_login_form($ERROR{WRONG_PASSWORD}), 
-                       title   => $self->_get_title('login_form'));
+         $self->_screen(
+            content => $self->_get_title('login_success'),
+            title   => $self->_get_title('login_success'),
+            forward => 1,
+            cookie  => $self->{cgi}->cookie(
+                        -name    => $self->{cookie_id},
+                        -value   => $self->{password},
+                        -expires => $self->{cookie_timeout},
+                     ),
+         );
+      }
+      else {
+         $self->_screen(
+            content => $self->_login_form($ERROR{WRONG_PASSWORD}),
+            title   => $self->_get_title('login_form'),
+         );
       }
    # Attemp to login via cookie
-   } elsif ($pass_param = $self->{cgi}->cookie($self->{cookie_id})) {
-      if($pass_param !~ m,$RE, and $pass_param eq $self->{password}) {
+   }
+   elsif ($pass_param = $self->{cgi}->cookie($self->{cookie_id})) {
+      if ( $pass_param !~ $RE && $pass_param eq $self->{password} ) {
          $self->{logged_in} = 1;
          return 1;
-      } else {
-         $self->_screen(content => $ERROR{INVALID_COOKIE},
-                       title   => $self->_get_title('cookie_error'),
-                       cookie  => $self->_empty_cookie,
-                       forward => 1);
       }
-   } else {
-      $self->_screen(content => $self->_login_form,
-                    title   => $self->_get_title('login_form'));
+      else {
+         $self->_screen(
+            content => $ERROR{INVALID_COOKIE},
+            title   => $self->_get_title('cookie_error'),
+            cookie  => $self->_empty_cookie,
+            forward => 1,
+         );
+      }
    }
+   else {
+      $self->_screen(
+         content => $self->_login_form,
+         title   => $self->_get_title('login_form'),
+      );
+   }
+   return;
 }
 
 # Private method. Used internally to compile templates
@@ -256,34 +297,35 @@ sub _compile_template {
    my $self = shift;
    my $key  = shift;
    my $code = $self->{'template_'.$key};
-   return unless $code;
-   my $param;
-      $code =~ s[<\?(?:\s+|)(\w+)(?:\s+|)\?>]
-                [
-                   $param = lc $1; 
-                   if ($param !~ m,\W,s and exists $self->{$param}) {
-                      $self->{$param};
-                   }
-                ]segox;
+   return if ! $code;
+   $code =~ s{<\?(?:\s+|)(\w+)(?:\s+|)\?>}
+            {
+               my $param = lc $1; 
+               if ( $param !~ m{\W}xms && exists $self->{$param} ) {
+                  $self->{$param};
+               }
+            }xmsge;
    return $code;
 }
 
 sub _get_title {
    my $self  = shift;
    my $key   = shift or return;
-   return $self->{_TEMPLATE_TITLE_USER}{'title_'.$key} || $self->{_TEMPLATE_TITLE}{'title_'.$key};
+   return $self->{_TEMPLATE_TITLE_USER}{'title_'.$key}
+       || $self->{_TEMPLATE_TITLE}{'title_'.$key};
 }
 
 sub set_template {
-   my $self = shift;
-   $self->_fatal($ERROR{INVALID_OPTION}) if scalar(@_) % 2;
-   my %o = @_;
+   my($self, @args) = @_;
+   $self->_fatal($ERROR{INVALID_OPTION}) if @args % 2;
+   my %o = @args;
    if ($o{delete_all}) {
       foreach my $key (keys %{$self}) {
-         delete $self->{$key} if $key =~ /^template_/;
+         delete $self->{$key} if $key =~ m{ \A template_ }xms;
       }
       $self->{_TEMPLATE_TITLE_USER} = {};
-   } else {
+   }
+   else {
       foreach my $key (@{ $self->{_TEMPLATE_NAMES} }) {
          $self->{'template_'.$key} = $o{$key} if exists $o{$key};
       }
@@ -292,113 +334,183 @@ sub set_template {
 }
 
 sub set_title {
-   my $self = shift;
-   $self->_fatal($ERROR{INVALID_OPTION}) if scalar(@_) % 2;
-   my %o = @_;
-   foreach (keys %o) {
-      $self->{_TEMPLATE_TITLE_USER}{'title_'.$_} = $o{$_} if $self->{_TEMPLATE_TITLE}{'title_'.$_};
+   my($self, @args) = @_;
+   $self->_fatal($ERROR{INVALID_OPTION}) if @args % 2;
+   my %o = @args;
+   foreach ( keys %o ) {
+      next if ! $self->{_TEMPLATE_TITLE}{'title_'.$_};
+      $self->{_TEMPLATE_TITLE_USER}{'title_'.$_} = $o{$_};
    }
+   return;
 }
 
 sub _login_form {
-   my $self = shift;
-      $self->{page_form_error} = shift if $_[0];
-   my $code = $self->_compile_template('login_form')
-              ||
-              qq~
+   my($self, @args) = @_;
+      $self->{page_form_error} = shift @args if @args;
+   return $self->_compile_template('login_form') || <<"TEMPLATE";
 <span class="error">$self->{page_form_error}</span>
-<form action="$self->{program}" method="post">
 
-<table border="0" cellpadding="0" cellspacing="0">
- <tr><td class="darktable">
-  <table border="0" cellpadding="4" cellspacing="1">
- <tr>
-   <td class="titletable" colspan="3">You need to login to use this function</td>
- </tr>
- <tr>
-  <td class="lighttable">Enter <i>the</i> password to run this program:</td>
-  <td class="lighttable"><input type="password" name="$self->{cookie_id}"></td>
-  <td class="lighttable" align="right">
-  <input type="submit" name="submit" value="Login">
-  $self->{hidden}
-  </td>
- </tr>
-</table>
-</td> </tr>
-</table>
+<form action = "$self->{program}"
+      method = "post"
+   >
+   <table border      = "0"
+          cellpadding = "0"
+          cellspacing = "0"
+         >
+      <tr>
+         <td class="darktable">
+            <table border      = "0"
+                   cellpadding = "4"
+                   cellspacing = "1"
+               >
+               <tr>
+                  <td class   = "titletable"
+                      colspan = "3"
+                     >
+                     You need to login to use this function
+                  </td>
+               </tr>
+               <tr>
+                  <td class="lighttable">
+                     Enter <i>the</i> password to run this program:
+                  </td>
+                  <td class="lighttable">
+                     <input type = "password"
+                            name = "$self->{cookie_id}"
+                           />
+                  </td>
+                  <td class = "lighttable"
+                      align = "right"
+                     >
+                     <input type  = "submit"
+                            name  = "submit"
+                            value = "Login"
+                           />
+                     $self->{hidden}
+                  </td>
+               </tr>
+            </table>
+         </td>
+      </tr>
+   </table>
 </form>
-   ~;
-   return $code;
+TEMPLATE
 }
 
 sub _change_pass_form {
-   my $self = shift;
-      $self->{page_form_error} = shift if $_[0];
-   my $code = $self->_compile_template('change_pass_form')
-              ||
+   my($self, @args) = @_;
+   $self->{page_form_error} = shift @args if @args;
+   return $self->_compile_template('change_pass_form') || <<"PASS_FORM";
               qq~
 <span class="error">$self->{page_form_error}</span>
-<form action="$self->{program}" method="post">
 
-<table border="0" cellpadding="0" cellspacing="0">
- <tr><td class="darktable">
-  <table border="0" cellpadding="4" cellspacing="1">
- <tr>
-   <td class="titletable" colspan="3">
-   Enter a password between 3 and 32 characters and no spaces allowed!</td>
- </tr>
- <tr>
-  <td class="lighttable">Enter your new password:</td>
-  <td class="lighttable"><input type="password" name="$self->{cookie_id}_new"></td>
-  <td class="lighttable" align="right">
-  <input type="submit" name="submit" value="Change Password">
-  <input type="hidden" name="change_password" value="ok"></td>
-  <input type="hidden" name="$self->{changep_param}" value="1"></td>
-  $self->{hidden}
- </tr>
-</table>
-</td> </tr>
-</table>
-</form>~;
+<form action = "$self->{program}"
+      method = "post"
+   >
+
+   <table border      = "0"
+          cellpadding = "0"
+          cellspacing = "0"
+      >
+      <tr>
+         <td class="darktable">
+            <table border      = "0"
+                   cellpadding = "4"
+                   cellspacing = "1"
+               >
+               <tr>
+                  <td class   = "titletable"
+                      colspan = "3"
+                     >
+                     Enter a password between 3 and 32 characters
+                     and no spaces allowed!
+                  </td>
+               </tr>
+               <tr>
+                  <td class="lighttable">
+                     Enter your new password:
+                  </td>
+                  <td class="lighttable">
+                     <input type = "password"
+                            name = "$self->{cookie_id}_new"
+                           />
+                  </td>
+                  <td class="lighttable"
+                      align="right"
+                     >
+                     <input type  = "submit"
+                            name  = "submit"
+                            value = "Change Password"
+                           />
+                     <input type  = "hidden"
+                            name  = "change_password"
+                            value = "ok"
+                           />
+                  </td>
+                     <input type  = "hidden"
+                            name  = "$self->{changep_param}"
+                            value = "1"
+                           />
+                  </td>
+                  $self->{hidden}
+               </tr>
+            </table>
+         </td>
+      </tr>
+   </table>
+</form>
+PASS_FORM
 }
 
 sub logoff_link {
    my $self = shift;
-   my $query = $self->{hidden_q} ? "&".$self->{hidden_q} : "";
-   return $self->_compile_template('logoff_link')
-           ||
-          qq~<span class="small">[<a href="$self->{program}?$self->{logoff_param}=1$query">Log-off</a> - <a href="$self->{program}?$self->{changep_param}=1$query">Change password</a>]</span> ~ if $self->{logged_in};
-   return '';
+   my $query = $self->{hidden_q} ? q{&} . $self->{hidden_q} : EMPTY_STRING;
+   if ( $self->{logged_in} ) {
+      return $self->_compile_template('logoff_link') || <<"TEMPLATE";
+<span class="small">
+   [
+      <a href="$self->{program}?$self->{logoff_param}=1$query">Log-off</a>
+      -
+      <a href="$self->{program}?$self->{changep_param}=1$query">Change password</a>
+   ]
+</span>
+TEMPLATE
+   }
+   return EMPTY_STRING;
 }
 
 # For form errors
-sub _error { 
+sub _error {
    my $self  = shift;
    my $error = shift;
-   $self->_screen(content => qq~<span class="error">$error</span>~, title => $self->_get_title('error'));
+   return $self->_screen(
+            content => qq~<span class="error">$error</span>~,
+            title   => $self->_get_title('error'),
+         );
 }
 
 sub _screen {
-   my $self   = shift;
-   my %p      = scalar(@_) % 2 ? () : @_;
-   my @cookie = $p{cookie} ? (-cookie => $p{cookie}) : (); 
+   my($self, @args) = @_;
+   my %p      = @args % 2 ? () : @args;
+   my @cookie = $p{cookie} ? (-cookie => $p{cookie}) : ();
 
    my $refresh_url;
    if ( $self->{hidden_q} ) {
       $refresh_url = "$self->{program}?$self->{hidden_q}";
-   } else {
+   }
+   else {
       my @qs;
       foreach my $p ( $self->{cgi}->param ) {
-         next if $p eq $self->{logoff_param};
-         next if $p eq $self->{changep_param};
-         next if $p eq $self->{cookie_id};
-         next if $p eq $self->{cookie_id} . '_new';
-         push @qs, $p . '=' . $self->{cgi}->param( $p );
+         next if $p eq $self->{logoff_param}
+              || $p eq $self->{changep_param}
+              || $p eq $self->{cookie_id}
+              || $p eq $self->{cookie_id} . '_new';
+         push @qs, $p . q{=} . $self->{cgi}->param( $p );
       }
       my $url = $self->{program};
       if ( @qs ) {
          $url =~ s{\?}{}xmsg;
-         $url .= '?' . join('&', @qs);
+         $url .= q{?} . join q{&}, @qs;
       }
       $refresh_url = $url;
    }
@@ -407,63 +519,71 @@ sub _screen {
    $self->{page_logoff_link}    = $self->logoff_link;
    $self->{page_content}        = $p{content};
    $self->{page_title}          = $p{title};
-   $self->{page_refresh}        = $p{forward} ? qq~<meta http-equiv="refresh" content="0; url=$refresh_url">~ : '';
-   $self->{page_inline_refresh} = $p{forward} ? qq~<a href="$refresh_url">&#187;</a>~ : '';
-   my $out = $self->_compile_template('screen')
-              ||
-             qq~<html>
+   $self->{page_refresh}        = $p{forward}
+                                ? qq~<meta http-equiv="refresh" content="0; url=$refresh_url">~
+                                : EMPTY_STRING
+                                ;
+   $self->{page_inline_refresh} = $p{forward}
+                                ? qq~<a href="$refresh_url">&#187;</a>~
+                                : EMPTY_STRING
+                                ;
+   my $out = $self->_compile_template('screen') || <<"MAIN_TEMPLATE";
+<html>
    <head>
-    $self->{page_refresh}
-    <title>$self->{page_title}</title>
-    <style>
-      body       {font-family: Verdana, sans; font-size: 10pt}
-      td         {font-family: Verdana, sans; font-size: 10pt}
-     .darktable  { background: black;   }
-     .lighttable { background: white;   }
-     .titletable { background: #dedede; }
-     .error      { color = red; font-weight: bold}
-     .small      { font-size: 8pt}
-    </style>
+      $self->{page_refresh}
+      <title>$self->{page_title}</title>
+      <style>
+         body       {font-family: Verdana, sans; font-size: 10pt}
+         td         {font-family: Verdana, sans; font-size: 10pt}
+         .darktable  { background: black;   }
+         .lighttable { background: white;   }
+         .titletable { background: #dedede; }
+         .error      { color = red; font-weight: bold}
+         .small      { font-size: 8pt}
+      </style>
    </head>
    <body>
       $self->{'page_logoff_link'}
       $self->{'page_content'}
       $self->{'page_inline_refresh'}
    </body>
-   </html>~;
-   print $self->{cgi}->header(-charset => $self->{http_charset},@cookie).$out;
-   $self->_exit_program;
+</html>
+MAIN_TEMPLATE
+   my $header = $self->{cgi}->header(
+                  -charset => $self->{http_charset},
+                  @cookie
+               );
+   my $pok = print $header . $out;
+   return $self->_exit_program;
 }
 
 sub fatal_header {
-   my $self = shift;
-   if (@_) {
-      $FATAL_HEADER = shift;
-   } else {
-      return $FATAL_HEADER || qq~Content-Type: text/html; charset=ISO-8859-1\n\n~;
-   }
+   my($self, @args) = @_;
+   $FATAL_HEADER = shift @args if @args;
+   return $FATAL_HEADER || qq~Content-Type: text/html; charset=ISO-8859-1\n\n~;
 }
 
 # Trap deadly errors
 sub _fatal {
    my $self      = shift;
-   my $error     = shift || '';
+   my $error     = shift || EMPTY_STRING;
    my @rep       = caller 0;
    my @caller    = caller 1;
-      $rep[1]    =~ s,.*[\\/],,;
-      $caller[1] =~ s,.*[\\/],,;
+      $rep[1]    =~ s{.*[\\/]}{}xms;
+      $caller[1] =~ s{.*[\\/]}{}xms;
    my $class     = ref $self;
    my $fatal     = $self->fatal_header;
-      $fatal    .= qq~<html>
-      <head>
-       <title>Flawless Victory</title>
-       <style>
-        body  {font-family: Verdana, sans; font-size: 11pt}
-       .error { color : red }
-       .finfo { color : gray}
-       </style>
-      </head>
-      <body>
+      $fatal    .= <<"FATAL";
+<html>
+   <head>
+      <title>Flawless Victory</title>
+      <style>
+         body  {font-family: Verdana, sans; font-size: 11pt}
+         .error { color : red }
+         .finfo { color : gray}
+      </style>
+   </head>
+   <body>
       <h1>$class $VERSION - Fatal Error</h1>
       <span class="error">$error</span> 
       <br>
@@ -473,48 +593,47 @@ sub _fatal {
       <br>
       Error occurred in <b>$rep[0]</b> line <b>$rep[2]</b>.
       </span>
-      </body>
-      </html>~;
-   print $fatal;
-   $self->_exit_program;
+   </body>
+</html>
+FATAL
+   my $pok = print $fatal;
+   return $self->_exit_program;
 }
 
 sub _match_pass  {
    my $self = shift;
    my $form = shift;
-   return _crypt($form, substr($self->{password},0,2)) eq $self->{password};
+   return crypt($form, substr $self->{password}, 0, 2 ) eq $self->{password};
 }
 
 sub _encode   {
    my $self  = shift;
    my $plain = shift;
-   return _crypt($plain, join('',('.','/',0..9,'A'..'Z','a'..'z')[rand 64,rand 64]));
+   my $salt  = join EMPTY_STRING, (CRYP_CHARS)[ rand RANDOM_NUM, rand RANDOM_NUM ];
+   return crypt $plain, $salt;
 }
 
 sub _empty_cookie {
    my $self = shift;
-   return $self->{cgi}->cookie(-name    => $self->{cookie_id},
-                               -value   => '', 
-                               -expires => '-10y')
+   return $self->{cgi}->cookie(
+            -name    => $self->{cookie_id},
+            -value   => EMPTY_STRING,
+            -expires => '-10y',
+         )
 }
 
 sub _exit_program {
    my $exit = shift->{EXIT_PROGRAM};
-   $exit ? $exit->() : exit;
+   return $exit ? $exit->() : exit;
 }
-
-sub AUTOLOAD {
-   my $self = shift;
-   my $name = $AUTOLOAD;
-      $name =~ s,.*:,,;
-      $self->_fatal(sprintf $ERROR{UNKNOWN_METHOD}, $name);
-}
-
-sub DESTROY {}
 
 1;
 
 __END__
+
+=pod
+
+=encoding utf8
 
 =head1 NAME
 
@@ -549,8 +668,8 @@ or you can just say:
 
 =head1 DESCRIPTION
 
-This document describes version C<1.21> of C<CGI::Auth::Basic>
-released on C<23 April 2009>.
+This document describes version C<1.22> of C<CGI::Auth::Basic>
+released on C<27 August 2012>.
 
 This module adds a simple (may be a little complex if you use all
 features) user validation system on top of your program. If you have 
@@ -838,33 +957,21 @@ If you want to change the error messages, do this before calling C<new()>.
 See the 'eg' directory in the distribution. Download the distro from 
 CPAN, if you don't have it.
 
-=head1 CAVEATS
-
-If you are using perl 5.5.3 and older on Win32 platform (this issue
-may not be limited with Win32 but I'm not sure), you may need to 
-install L<Crypt::UnixCrypt>. The C<CORE::crypt()> function is not 
-implemented on this version.
-
-=head1 BUGS
-
-Contact the author if you find any.
-
 =head1 SEE ALSO
 
 L<CGI> and L<CGI::Auth>.
 
 =head1 AUTHOR
 
-Burak Gürsoy, E<lt>burakE<64>cpan.orgE<gt>
+Burak Gursoy <burak@cpan.org>.
 
 =head1 COPYRIGHT
 
-Copyright 2004-2009 Burak Gürsoy. All rights reserved.
+Copyright 2004 - 2012 Burak Gursoy. All rights reserved.
 
 =head1 LICENSE
 
-This library is free software; you can redistribute it and/or modify 
-it under the same terms as Perl itself, either Perl version 5.8.8 or, 
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.12.3 or,
 at your option, any later version of Perl 5 you may have available.
-
 =cut

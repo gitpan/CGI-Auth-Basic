@@ -1,13 +1,15 @@
 #!/usr/bin/perl -w
 use strict;
+use warnings;
 use CGI;
-my $cgi  = CGI->new;
 
-my $auth = TRAuth->new($cgi);
+my $tr_auth = TRAuth->new( CGI->new );
 # $auth->set_template(delete_all => 1);
-   $auth->check_user;
-   $auth->screen(content => "Bu programý kullanabilirsiniz", 
-                 title   => "Eriþim onaylandý");
+$tr_auth->check_user;
+$tr_auth->screen(
+   content => 'Bu programý kullanabilirsiniz',
+   title   => 'Eriþim onaylandý',
+);
 
 # Translate the interface to turkish
 package TRAuth;
@@ -18,16 +20,17 @@ sub new {
    my $cgi   = shift;
    CGI::Auth::Basic->fatal_header("Content-Type: text/html; charset=ISO-8859-9\n\n");
    %CGI::Auth::Basic::ERROR = error();
-   my $auth = CGI::Auth::Basic->new(cgi_object     => $cgi, 
-                                    file           => "./password.txt",
-                                    http_charset   => 'ISO-8859-9',
-                                    setup_pfile    => 1,
-                                    logoff_param   => 'cik',
-                                    changep_param  => 'parola_degistir',
-                                    cookie_id      => 'parolakurabiyesi',
-                                    cookie_timeout => '1h',
-                                    chmod_value    => 0777,
-                                    );
+   my $auth = CGI::Auth::Basic->new(
+               cgi_object     => $cgi,
+               file           => './password.txt',
+               http_charset   => 'ISO-8859-9',
+               setup_pfile    => 1,
+               logoff_param   => 'cik',
+               changep_param  => 'parola_degistir',
+               cookie_id      => 'parolakurabiyesi',
+               cookie_timeout => '1h',
+               chmod_value    => 0777,
+            );
 
    $auth->set_template(template());
    $auth->set_title(title());
@@ -35,9 +38,7 @@ sub new {
 }
 
 sub template {
-   return 
-login_form => qq~
-
+   return login_form => <<"TEMPLATE",
 <span class="error"><?PAGE_FORM_ERROR?></span>
 <form action="<?PROGRAM?>" method="post">
 
@@ -56,9 +57,9 @@ login_form => qq~
 </td> </tr>
 </table>
 </form>
-   ~,
+TEMPLATE
 
-change_pass_form => qq~
+change_pass_form => <<"TEMPLATE",
 <span class="error"><?PAGE_FORM_ERROR?></span>
 <form action="<?PROGRAM?>" method="post">
 
@@ -83,9 +84,10 @@ change_pass_form => qq~
 </table>
 </form>
 
-~,
+TEMPLATE
 
-screen => qq~<html>
+screen => <<"TEMPLATE",
+<html>
    <head>
     <?PAGE_REFRESH?>
     <title>CGI::Auth::Basic - Türkçe >> <?PAGE_TITLE?></title>
@@ -110,12 +112,11 @@ screen => qq~<html>
    <span class="small">[<a href="<?PROGRAM?>?<?LOGOFF_PARAM?>=1">Çýk</a>
    - <a href="<?PROGRAM?>?<?CHANGEP_PARAM?>=1">Parolayý deðiþtir</a>]</span> ~,
 
-   ;
+TEMPLATE
 }
 
 sub title {
-return 
-   login_form       => 'Baðlan',
+return login_form       => 'Baðlan',
    cookie_error     => 'Geçersiz kurabiye',
    login_success    => 'Baðlantý baþarýlý',
    logged_off       => 'Çýkýþ yaptýnýz',
@@ -127,17 +128,16 @@ return
 }
 
 sub error {
-return 
-   INVALID_OPTION    => "Seçenekler 'parametre => deðer' biçiminde olmalý!",
-   CGI_OBJECT        => "Çalýþmak için bir CGI nesnesine ihtiyacým var!!!",
-   FILE_READ         => "Parola dosyasý açýlamýyor: ",
-   NO_PASSWORD       => "Herhangi bir parola belirtilmedi (veya parola dosyasý bulunamýyor)!",
-   UPDATE_PFILE      => "Parola dosyanýz boþ ve geçerli ayarlarýnýz bu kodun dosyayý güncellemesine izin vermiyor! Lütfen parola dosyanýzý güncelleyin.",
-   ILLEGAL_PASSWORD  => "Geçersiz parola! Kabul edilmedi. Geri dönün ve yeni bir tane girin",
-   FILE_WRITE        => "Parola dosyasý güncelleme için açýlamýyor: ",
-   UNKNOWN_METHOD    => "'<b>%s</b>' adýnda bir metod yok. Kodunuzu denetleyin.",
-   EMPTY_FORM_PFIELD => "Herhangi bir parola ayarlamadýnýz (parola dosyasý boþ)!",
-   WRONG_PASSWORD    => "<p>Yanlýþ Parola!</p>",
-   INVALID_COOKIE    => "Kurabiyeniz geçersiz bilgi içeriyor ve bu kurabiye program tarafýndan silindi.",
+return INVALID_OPTION    => q{Seçenekler 'parametre => deðer' biçiminde olmalý!},
+   CGI_OBJECT        => q{Çalýþmak için bir CGI nesnesine ihtiyacým var!!!},
+   FILE_READ         => 'Parola dosyasý açýlamýyor: ',
+   NO_PASSWORD       => 'Herhangi bir parola belirtilmedi (veya parola dosyasý bulunamýyor)!',
+   UPDATE_PFILE      => 'Parola dosyanýz boþ ve geçerli ayarlarýnýz bu kodun dosyayý güncellemesine izin vermiyor! Lütfen parola dosyanýzý güncelleyin.',
+   ILLEGAL_PASSWORD  => 'Geçersiz parola! Kabul edilmedi. Geri dönün ve yeni bir tane girin',
+   FILE_WRITE        => 'Parola dosyasý güncelleme için açýlamýyor: ',
+   UNKNOWN_METHOD    => q{'<b>%s</b>' adýnda bir metod yok. Kodunuzu denetleyin.},
+   EMPTY_FORM_PFIELD => 'Herhangi bir parola ayarlamadýnýz (parola dosyasý boþ)!',
+   WRONG_PASSWORD    => '<p>Yanlýþ Parola!</p>',
+   INVALID_COOKIE    => 'Kurabiyeniz geçersiz bilgi içeriyor ve bu kurabiye program tarafýndan silindi.',
    ;
 }

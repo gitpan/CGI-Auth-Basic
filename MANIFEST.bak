@@ -17,15 +17,15 @@ eg/03_standard.pl
 eg/04_simple.pl
 eg/password.txt
 lib/CGI/Auth/Basic.pm
-LICENSE
 Makefile.PL			Generated automatically
 MANIFEST
 MANIFEST.bak
 MANIFEST.SKIP
-META.json
-META.yml
 README
 SPEC
 t/001-use.t
 xt/author/201-pod.t
 xt/author/202-pod-coverage.t
+LICENSE
+META.yml
+META.json

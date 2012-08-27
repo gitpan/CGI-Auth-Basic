@@ -6,3 +6,5 @@
 ^Build$
 ^_build/
 \.tmp$
+^MYMETA\.yml$
+^MYMETA\.json$
